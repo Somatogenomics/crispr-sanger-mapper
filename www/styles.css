@@ -1,0 +1,14 @@
+body { background:#f7f9fb; }
+.container-fluid { max-width: 1500px; }
+.navbar, .well { border-radius: 10px; }
+h2 { color:#17365d; font-weight:700; margin-bottom:2px; }
+.subtitle { color:#4b6476; margin-bottom:18px; }
+.well { background:white; border:1px solid #dce4ea; box-shadow:0 1px 4px rgba(0,0,0,.04); }
+.table-wrap { overflow-x:auto; }
+.ok-box,.warn-box,.candidate-box { padding:10px 12px; border-radius:8px; margin-bottom:10px; }
+.ok-box { background:#edf8f1; border:1px solid #abd6b9; }
+.warn-box { background:#fff3e6; border:1px solid #e8ba87; }
+.candidate-box { background:#fff8d9; border:1px solid #dfc46e; }
+.privacy { font-size:12px; color:#355d4d; }
+.note { font-size:12px; color:#666; }
+.alignment { font-family:Consolas,Monaco,monospace; font-size:12px; background:#101820; color:#edf3f7; padding:12px; max-height:320px; overflow:auto; }

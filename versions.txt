@@ -1,0 +1,6 @@
+Application: CRISPR Sanger Mapper v0.1.1
+Runtime target: R via Shinylive/webR
+R dependencies: shiny (plus base/recommended R only)
+Deployment: posit-dev/r-shinylive reusable GitHub Pages workflow @ actions-v1
+Reference implementation used for parity: sanger_crispr_qc.py v1.1.0
+Updated: 2026-10-31

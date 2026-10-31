@@ -1,0 +1,7 @@
+.Rhistory
+.RData
+.Rproj.user/
+site/
+*.ab1
+private/
+.DS_Store
