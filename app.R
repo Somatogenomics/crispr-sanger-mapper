@@ -12,13 +12,21 @@ ui <- fluidPage(
       uiOutput("ref_record_ui"),
       fileInput("ab1", "Sanger chromatograms (.ab1)", accept=c(".ab1"), multiple=TRUE),
       textAreaInput("guides", "sgRNA protospacer(s), one per line", rows=4,
-                    placeholder="ACGTTGCTACGATCCTGATG"),
+                    placeholder="20-nt protospacer (without PAM)"),
       textInput("pam", "PAM motif (IUPAC)", value="NGG"),
       tags$hr(),
       numericInput("mott", "Mott error-probability cutoff", value=0.05, min=.001, max=.2, step=.01),
       numericInput("minq", "Fallback minimum Phred", value=20, min=0, max=60),
       numericInput("minlen", "Minimum HQ window (bp)", value=20, min=10, max=200),
-      numericInput("het", "Secondary / primary peak threshold", value=.30, min=.05, max=.95, step=.05),
+      numericInput("het", "Secondary/primary peak-height ratio", value=.30, min=.05, max=.95, step=.05),
+      numericInput("minmeanq", "Minimum mean quality (HQ window)", value=15, min=0, max=60, step=1),
+      tags$details(
+        tags$summary("Alignment scoring"),
+        numericInput("aln_match", "Match", value=2, step=1),
+        numericInput("aln_mismatch", "Mismatch", value=-2, step=1),
+        numericInput("aln_open", "Gap open (first gap position)", value=-5, step=1),
+        numericInput("aln_extend", "Gap extend (each further position)", value=-1, step=1)
+      ),
       actionButton("run", "Analyze", class="btn-primary btn-block"),
       tags$hr(),
       p(class="privacy", strong("Privacy:"), "uploaded files are processed in your browser when deployed with Shinylive; they are not sent to an analysis server."),
@@ -34,9 +42,10 @@ ui <- fluidPage(
         tabPanel("Sample review",
           br(), fluidRow(column(5,selectInput("selected","Sample × guide", choices=NULL)),
                          column(7,uiOutput("call_box"))),
-          uiOutput("site_evidence"),
-          plotOutput("trace", height="430px"),
+          plotOutput("trace", height="390px"),
           h4("Alignment"), pre(class="alignment", textOutput("alignment")),
+          h4("Cut-site evidence"), tableOutput("evidence"),
+          h4("Alignment gaps near cut"), tableOutput("gaps"),
           h4("Reference mismatches"), tableOutput("mismatches")
         ),
         tabPanel("Method",
@@ -45,16 +54,17 @@ ui <- fluidPage(
           tags$ol(
             tags$li("Parse ABIF tags: PBAS, PCON, PLOC, FWO_, and analyzed trace channels DATA9–DATA12."),
             tags$li("Quality trim using Mott scoring, with a longest-Q fallback."),
-            tags$li("Align both read orientations to the selected FASTA record."),
+            tags$li("Align both read orientations to the selected FASTA record (local alignment, affine gap scores)."),
             tags$li("Require a strand-correct PAM adjacent to the supplied guide before deriving a SpCas9 cut coordinate."),
-            tags$li("Map BOTH reference bases flanking the predicted Cas9 cleavage boundary into the original chromatogram, accounting for read and sgRNA strand."),
-            tags$li("Assess the pre-cut baseline (-35 to -9 bases), onset near the cut (-5 to +8), and sustained post-cut signal (+3 to +28), all relative to the sequencing direction and restricted to mapped bases."),
-            tags$li("Require a clean-enough pre-cut baseline and a significant increase in sustained secondary/primary ratio after the validated cut. Diffuse high peaks elsewhere never trigger the cut-localized call."),
-            tags$li("Separate low-quality or unbracketed-cut results from possible editing; report nearby alignment gaps independently for manual review.")
+            tags$li("Map BOTH reference bases immediately flanking the SpCas9 cut into original sequencing-direction coordinates. A one-sided or extrapolated cut can guide visual review but cannot support an automated mixed-indel or WT-like call."),
+            tags$li("For mixed-phase calls, require a quality-filtered cleaner baseline before the cut, onset within -5..+8 bp, and sustained elevated secondary/primary signal in +3..+28 bp after the cut (in read direction)."),
+            tags$li("A high-quality clean alignment gap bracketing the expected cut can yield a separate provisional clean-indel flag, even if the deleted base prevents mapping the immediate cut flanks. Diffuse or late-onset mixed signal never yields a cut-associated mixed-indel call."),
+            tags$li("Keep inadequate-quality, inadequate-cut-window and ambiguous PAM cases as screening failures. Report reference mismatches for comparison with WT controls; do not automatically treat SNPs as edits.")
           ),
           h4("Interpretation"),
-          p("WT-like means no automated indel signature was detected in a read that passed QC. It does not prove the absence of a low-frequency edit."),
-          p("A cut-localized phase change is a screening clue, not a diagnosis of heterozygosity or mosaicism. Without a matched WT chromatogram, the app does not subtract background or estimate allele frequencies."),
+          p("WT-like means no automated indel signature was detected in an adequately mapped read; it does NOT prove absence of editing, especially low-frequency alleles or SNVs."),
+          p("Possible heterozygous/mosaic indel requires PAM-validated cut-localized phase-change evidence and sufficient mapped baseline/onset/post-cut bases. It is a hypothesis, not proof of genotype."),
+          p("Alignment gaps near cut are screened separately: their locations and allele identity require manual review and independent confirmation."),
           p("Reference mismatches away from the cut should be checked in unedited strain-matched controls before being attributed to editing.")
         )
       )
@@ -76,12 +86,16 @@ server <- function(input, output, session) {
     req(input$ref, input$ab1, input$ref_record)
     gs <- parse_guides(input$guides)
     validate(need(length(gs)>0,"Enter at least one sgRNA protospacer."))
+    validate(need(input$aln_open <= 0 && input$aln_extend <= 0 && input$aln_match > 0,
+                  "Gap scores must be <= 0 and the match score > 0."))
     r <- refs()[[as.integer(input$ref_record)]]
     withProgress(message="Analyzing chromatograms", value=0, {
       ans <- analyse_batch(input$ab1$datapath, r$name, r$seq, gs, toupper(input$pam),
                            sample_names=input$ab1$name,
                            mott_cutoff=input$mott, min_hq_len=input$minlen,
-                           min_qual=input$minq, het_threshold=input$het)
+                           min_qual=input$minq, min_mean_q=input$minmeanq, het_threshold=input$het,
+                           match=input$aln_match, mismatch=input$aln_mismatch,
+                           gap_open=input$aln_open, gap_extend=input$aln_extend)
       incProgress(1)
       ans
     })
@@ -107,34 +121,28 @@ server <- function(input, output, session) {
   selected_result <- reactive({ req(input$selected); analysis()$results[[input$selected]] })
   output$call_box <- renderUI({
     x <- selected_result()$summary[1,]
-    cls <- if (x$status=="FAIL") "warn-box" else if (grepl("POSSIBLE",x$call)) "candidate-box" else "ok-box"
+    cls <- if (x$status=="PASS" && grepl("WT_LIKE",x$call)) "ok-box" else if (x$status=="FAIL") "warn-box" else "candidate-box"
     div(class=cls,
       strong(x$call), tags$br(),
-      sprintf("Status: %s | strand: %s | identity: %s | mean Q: %s | cut covered: %s",
-              x$status, x$read_strand, ifelse(is.na(x$identity),"NA",sprintf("%.1f%%",100*x$identity)), x$mean_q, x$cut_covered),
+      sprintf("Status: %s | strand: %s | identity: %s | mean Q: %s | cut mapping: %s",
+              x$status, x$strand, ifelse(is.na(x$identity),"NA",sprintf("%.1f%%",100*x$identity)), x$mean_q, x$cut_mapping),
+      tags$br(), sprintf("Guide strand: %s | validated PAM: %s | cut: %s | near-cut onset: %s",
+                        x$guide_strand, x$pam, x$cut_between, x$onset_first_offset),
       if (nzchar(x$manual_review)) tagList(tags$br(),em(x$manual_review))
     )
   })
-  output$site_evidence <- renderUI({
-    a <- selected_result(); x <- a$summary[1,]
-    if (is.null(a$guide_hit)) return(div(class="warn-box", "No uniquely PAM-validated sgRNA was found; cut-centered inference is disabled."))
-    e <- a$cut_evidence
-    fmt <- function(z, digits=2) if (length(z)==0 || !is.finite(z)) "NA" else sprintf(paste0("%.",digits,"f"),z)
-    div(class="note", tags$strong("Guide-anchored evidence"), tags$br(),
-      sprintf("sgRNA reference %d–%d (%s strand); PAM %s at %d–%d; predicted SpCas9 cleavage between reference %d|%d.",
-              a$guide_hit$guide_start,a$guide_hit$guide_end,a$guide_hit$strand,
-              a$guide_hit$pam,a$guide_hit$pam_start,a$guide_hit$pam_end,
-              a$guide_hit$cut_after,a$guide_hit$cut_after+1L),
-      tags$br(),
-      if (!isTRUE(x$cut_covered)) "Both cut-flanking bases are not adjacent in the mapped read; no mixed-indel inference is permitted." else
-        sprintf("Aligned cut baseline: n=%d median ratio=%s; near-cut mixed bases (-5 to +8): %d; downstream (+3 to +28): %d/%d; median ratio=%s; increase=%s. Cut-localized phase pattern: %s.",
-                e$baseline_n,fmt(e$baseline_median),e$onset_n,e$post_double,e$post_n,
-                fmt(e$post_median),fmt(e$delta),if(e$pattern) "YES (candidate)" else "NO"),
-      tags$br(), tags$small("All offsets follow original sequencing direction. Secondary/primary ratios are descriptive signals; results are not confirmed genotypes.")
-    )
-  })
-  output$trace <- renderPlot({ plot_trace(selected_result()) }, res=110)
+  output$trace <- renderPlot({ plot_trace(selected_result(), het_threshold=input$het) }, res=110)
   output$alignment <- renderText({ alignment_strings(selected_result()) })
+  output$evidence <- renderTable({
+    x <- selected_result()$summary
+    x[,c("cut_mapping","pre_scored_n","pre_median_ratio","onset_mixed_n",
+         "onset_first_offset","post_scored_n","post_double_n","post_double_fraction",
+         "post_median_ratio","post_minus_pre_ratio","cut_localized_pattern"),drop=FALSE]
+  }, striped=TRUE, bordered=TRUE, spacing="xs", digits=3)
+  output$gaps <- renderTable({
+    g <- selected_result()$gaps
+    if (!nrow(g)) data.frame(message="No alignment gaps near the cut") else g
+  }, striped=TRUE, bordered=TRUE, spacing="xs")
   output$mismatches <- renderTable({
     m <- selected_result()$mismatches
     if (!nrow(m)) data.frame(message="No aligned base mismatches detected") else m

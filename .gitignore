@@ -2,6 +2,10 @@
 .RData
 .Rproj.user/
 site/
-*.ab1
+results/
 private/
 .DS_Store
+# Experimental chromatograms stay out of the repository...
+*.ab1
+# ...except the synthetic test fixture.
+!tests/fixtures/*.ab1

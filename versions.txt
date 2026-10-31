@@ -1,6 +1,9 @@
-Application: CRISPR Sanger Mapper v0.1.1
-Runtime target: R via Shinylive/webR
-R dependencies: shiny (plus base/recommended R only)
-Deployment: posit-dev/r-shinylive reusable GitHub Pages workflow @ actions-v1
-Reference implementation used for parity: sanger_crispr_qc.py v1.1.0
-Updated: 2026-10-31
+Application: CRISPR Sanger Mapper v0.2.1
+Development baseline: R 4.3.3; shiny 1.8.0 (from v0.2.0; v0.2.1 NOT independently executed)
+Runtime target: Shiny via webR/Shinylive
+R dependency policy: base R + shiny (full renv.lock pending R-enabled environment)
+GitHub test matrix: setup-r R 4.3.3
+GitHub deployment: posit-dev/r-shinylive reusable workflow @actions-v1
+Core alignment: base-R affine-gap local Gotoh
+Reference Python: sanger_crispr_qc.py v1.1.0 (parity benchmark pending)
+Build: 2026-10-31

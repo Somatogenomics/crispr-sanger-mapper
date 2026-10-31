@@ -1,6 +1,6 @@
-# Seed-localized Smith-Waterman alignment. Intended for amplicon/locus references.
-# Scoring mirrors the production Python tool approximately: match +2, mismatch -2,
-# gap -5 (linear in this browser implementation). Alignment is performed in both orientations.
+# Seed-localized local alignment for amplicon/locus references.
+# Default scoring: match +2, mismatch -2, gap open -5, gap extend -1 (affine).
+# Alignment is performed in both read orientations.
 
 seed_region <- function(ref, query, k=11L, flank=120L) {
   if (nchar(ref) <= 1500L || nchar(query) < k) return(c(1L, nchar(ref)))
@@ -24,63 +24,89 @@ seed_region <- function(ref, query, k=11L, flank=120L) {
   c(lo, hi)
 }
 
-smith_waterman <- function(ref, query, match=2, mismatch=-2, gap=-5) {
+# Local alignment with affine gaps (Gotoh). Gap of length k scores
+# gap_open + (k - 1) * gap_extend, matching the Biopython PairwiseAligner
+# convention (open_gap_score applies to the first gap position).
+# Cells on each anti-diagonal are independent, so each diagonal is computed
+# as one vectorised step; this keeps the cost acceptable under webR.
+smith_waterman <- function(ref, query, match=2, mismatch=-2, gap_open=-5, gap_extend=-1) {
   r <- strsplit(ref, "")[[1]]; q <- strsplit(query, "")[[1]]
   nr <- length(r); nq <- length(q)
   if (!nr || !nq) stop("Empty sequence supplied to aligner")
-  H <- matrix(0, nrow=nr+1L, ncol=nq+1L)
-  P <- matrix(0L, nrow=nr+1L, ncol=nq+1L) # 1 diag, 2 up, 3 left
-  best <- 0; bi <- bj <- 1L
-  for (i in seq_len(nr)) {
-    for (j in seq_len(nq)) {
-      d <- H[i,j] + if (r[i]==q[j]) match else mismatch
-      u <- H[i,j+1L] + gap
-      l <- H[i+1L,j] + gap
-      vals <- c(0,d,u,l)
-      k <- which.max(vals)
-      H[i+1L,j+1L] <- vals[k]
-      P[i+1L,j+1L] <- k-1L
-      if (vals[k] > best) { best <- vals[k]; bi <- i+1L; bj <- j+1L }
+  NR <- nr + 1L
+  ncell <- NR * (nq + 1L)
+  H <- numeric(ncell)                 # best local score ending at (i,j)
+  E <- rep(-Inf, ncell)               # ends with gap in reference (insertion in read)
+  F <- rep(-Inf, ncell)               # ends with gap in read (deletion in read)
+  PH <- integer(ncell)                # 0 stop, 1 diag, 2 from E, 3 from F
+  PE <- logical(ncell)                # TRUE: E extended from E; FALSE: opened from H
+  PF <- logical(ncell)
+  for (d in 2:(nr + nq)) {
+    i <- max(1L, d - nq):min(nr, d - 1L)
+    j <- d - i
+    k  <- i + j * NR + 1L             # linear index of (i, j), 0-based i/j
+    kL <- k - NR                      # (i, j-1)
+    kU <- k - 1L                      # (i-1, j)
+    kD <- kL - 1L                     # (i-1, j-1)
+    e_ext <- E[kL] + gap_extend; e_opn <- H[kL] + gap_open
+    PE[k] <- e_ext > e_opn
+    E[k] <- pmax(e_ext, e_opn)
+    f_ext <- F[kU] + gap_extend; f_opn <- H[kU] + gap_open
+    PF[k] <- f_ext > f_opn
+    F[k] <- pmax(f_ext, f_opn)
+    dg <- H[kD] + ifelse(r[i] == q[j], match, mismatch)
+    h <- pmax(0, dg, E[k], F[k])
+    H[k] <- h
+    # Tie order: diagonal, then gap in reference, then gap in read.
+    PH[k] <- ifelse(h <= 0, 0L, ifelse(h == dg, 1L, ifelse(h == E[k], 2L, 3L)))
+  }
+  best <- max(H)
+  kb <- which.max(H)
+  bi <- (kb - 1L) %% NR                # 0-based row = reference position
+  bj <- (kb - 1L) %/% NR
+  i <- bi; j <- bj; state <- 1L        # 1 = H, 2 = E, 3 = F
+  ar <- aq <- character(); mr <- mq <- mk <- integer()
+  while (i > 0L && j > 0L) {
+    k <- i + j * NR + 1L
+    if (state == 1L) {
+      if (H[k] <= 0) break
+      p <- PH[k]
+      if (p == 0L) break
+      if (p == 2L) { state <- 2L; next }
+      if (p == 3L) { state <- 3L; next }
+      ar <- c(r[i], ar); aq <- c(q[j], aq)
+      mr <- c(i, mr); mq <- c(j, mq); mk <- c(1L, mk)
+      i <- i - 1L; j <- j - 1L
+    } else if (state == 2L) {
+      ar <- c("-", ar); aq <- c(q[j], aq)
+      mr <- c(NA_integer_, mr); mq <- c(j, mq); mk <- c(3L, mk)
+      if (!PE[k]) state <- 1L
+      j <- j - 1L
+    } else {
+      ar <- c(r[i], ar); aq <- c("-", aq)
+      mr <- c(i, mr); mq <- c(NA_integer_, mq); mk <- c(2L, mk)
+      if (!PF[k]) state <- 1L
+      i <- i - 1L
     }
   }
-  i <- bi; j <- bj; ar <- aq <- character(); map <- list()
-  while (i>1L && j>1L && H[i,j] > 0) {
-    p <- P[i,j]
-    if (p==1L) {
-      ar <- c(r[i-1L], ar); aq <- c(q[j-1L], aq)
-      map[[length(map)+1L]] <- c(ref=i-1L, query=j-1L, kind=1L)
-      i <- i-1L; j <- j-1L
-    } else if (p==2L) {
-      ar <- c(r[i-1L], ar); aq <- c("-", aq)
-      map[[length(map)+1L]] <- c(ref=i-1L, query=NA, kind=2L)
-      i <- i-1L
-    } else if (p==3L) {
-      ar <- c("-", ar); aq <- c(q[j-1L], aq)
-      map[[length(map)+1L]] <- c(ref=NA, query=j-1L, kind=3L)
-      j <- j-1L
-    } else break
-  }
-  map <- rev(map)
-  m <- if (length(map)) do.call(rbind, map) else matrix(numeric(), ncol=3)
-  aligned_ref <- paste(ar, collapse="")
-  aligned_q <- paste(aq, collapse="")
-  paired <- ar!="-" & aq!="-"
-  mism <- sum(paired & ar!=aq)
+  m <- cbind(ref=mr, query=mq, kind=mk)
+  paired <- ar != "-" & aq != "-"
+  mism <- sum(paired & ar != aq)
   aligned_bases <- sum(paired)
-  identity <- if (aligned_bases) (aligned_bases-mism)/aligned_bases else NA_real_
-  list(score=best, aligned_ref=aligned_ref, aligned_query=aligned_q,
-       map=m, ref_start=i, ref_end=bi-1L, query_start=j, query_end=bj-1L,
+  identity <- if (aligned_bases) (aligned_bases - mism) / aligned_bases else NA_real_
+  list(score=best, aligned_ref=paste(ar, collapse=""), aligned_query=paste(aq, collapse=""),
+       map=m, ref_start=i + 1L, ref_end=bi, query_start=j + 1L, query_end=bj,
        aligned_bases=aligned_bases, mismatches=mism, identity=identity,
-       score_per_base=if (aligned_bases) best/aligned_bases else 0)
+       score_per_base=if (aligned_bases) best / aligned_bases else 0)
 }
 
-align_orientation <- function(ref, query) {
+align_orientation <- function(ref, query, ...) {
   candidates <- list()
   for (strand in c("+","-")) {
     oq <- if (strand=="+") query else rc_seq(query)
     reg <- seed_region(ref, oq)
     subref <- substr(ref, reg[1], reg[2])
-    a <- smith_waterman(subref, oq)
+    a <- smith_waterman(subref, oq, ...)
     # Map local reference coordinates to original reference coordinates.
     if (nrow(a$map)) {
       ii <- is.finite(a$map[,"ref"])
@@ -95,12 +121,49 @@ align_orientation <- function(ref, query) {
   if (candidates[["+"]]$score >= candidates[["-"]]$score) candidates[["+"]] else candidates[["-"]]
 }
 
-map_ref_to_raw <- function(ref_pos, aln, hq_start, hq_len) {
-  if (!nrow(aln$map)) return(NA_integer_)
-  row <- which(is.finite(aln$map[,"ref"]) & aln$map[,"ref"]==ref_pos & is.finite(aln$map[,"query"]))
-  if (!length(row)) return(NA_integer_)
-  qi <- as.integer(aln$map[row[1],"query"])
-  if (aln$strand=="+") hq_start + qi - 1L else hq_start + (hq_len - qi)
+query_to_raw <- function(qi, aln, hq_start, hq_len) {
+  if (aln$strand == "+") hq_start + qi - 1L else hq_start + (hq_len - qi)
+}
+
+# Raw read index of the last base before the expected cut, in sequencing direction.
+# + strand reads run toward increasing reference coordinates, so the last pre-cut base is
+# reference position cut_after; - strand reads run the other way, so it is cut_after + 1.
+# If that reference base is deleted in the read, the nearest aligned base on the pre-cut
+# side is used. If the aligned (high-quality) part of the read stops short of the cut in
+# sequencing direction by at most max_extrapolate bases, the position is extrapolated
+# without assuming any indel; this happens when mixed peaks after a heterozygous cut lower
+# base quality and the quality trim ends just before the cut.
+map_cut_to_raw <- function(cut_after, aln, hq_start, hq_len, n_read, max_extrapolate=30L) {
+  out <- list(raw=NA_integer_, method="not_covered")
+  if (is.null(aln) || !nrow(aln$map) || is.na(cut_after)) return(out)
+  m <- aln$map
+  paired <- is.finite(m[, "ref"]) & is.finite(m[, "query"])
+  if (!any(paired)) return(out)
+  pr <- m[paired, "ref"]; pq <- m[paired, "query"]
+  if (aln$strand == "+") {
+    target <- cut_after
+    if (target >= min(pr) && target <= max(pr)) {
+      k <- max(which(pr <= target))
+      return(list(raw=query_to_raw(pq[k], aln, hq_start, hq_len), method="aligned"))
+    }
+    if (target > max(pr) && target - max(pr) <= max_extrapolate) {
+      k <- which.max(pr)
+      raw <- query_to_raw(pq[k], aln, hq_start, hq_len) + (target - pr[k])
+      if (raw <= n_read) return(list(raw=as.integer(raw), method="extrapolated"))
+    }
+  } else {
+    target <- cut_after + 1L
+    if (target >= min(pr) && target <= max(pr)) {
+      k <- min(which(pr >= target))
+      return(list(raw=query_to_raw(pq[k], aln, hq_start, hq_len), method="aligned"))
+    }
+    if (target < min(pr) && min(pr) - target <= max_extrapolate) {
+      k <- which.min(pr)
+      raw <- query_to_raw(pq[k], aln, hq_start, hq_len) + (pr[k] - target)
+      if (raw <= n_read) return(list(raw=as.integer(raw), method="extrapolated"))
+    }
+  }
+  out
 }
 
 alignment_gaps_near <- function(aln, cut_after, window=12L) {
@@ -125,31 +188,58 @@ alignment_gaps_near <- function(aln, cut_after, window=12L) {
   if (!length(rows)) data.frame() else do.call(rbind, rows)
 }
 
-# A Cas9 cut is a BOUNDARY between reference positions cut_after and cut_after+1.
-# Do not use only one mapped base: this is unsafe for a deletion/insertion at
-# the cleavage boundary and for reads sequenced in the reverse direction.
-# raw_pre/raw_post are relative to the CHROMATOGRAM sequencing direction,
-# independent of the reference and guide strands.
-map_cut_boundary <- function(cut_after, aln, hq_start, hq_len) {
-  left <- map_ref_to_raw(cut_after, aln, hq_start, hq_len)
-  right <- map_ref_to_raw(cut_after+1L, aln, hq_start, hq_len)
-  valid <- is.finite(left) && is.finite(right) && abs(left-right)==1L
-  list(
-    valid=valid,
-    ref_left=cut_after, ref_right=cut_after+1L,
-    raw_pre=if (valid) min(left,right) else NA_integer_,
-    raw_post=if (valid) max(left,right) else NA_integer_,
-    raw_left=left, raw_right=right,
-    reason=if (valid) "Adjacent cut-flanking bases mapped" else "Cut boundary not bracketed by adjacent mapped read bases"
-  )
+# Strict two-flank boundary mapping from v0.1.1, compatible with affine-gap alignments.
+# A single aligned base or an extrapolated coordinate is never enough for an
+# automated mixed-phase call. Coordinates are 1-based in reference and read.
+map_ref_to_raw <- function(ref_pos, aln, hq_start, hq_len) {
+  if (is.null(aln) || !nrow(aln$map)) return(NA_integer_)
+  k <- which(is.finite(aln$map[, "ref"]) & aln$map[, "ref"] == ref_pos &
+             is.finite(aln$map[, "query"]))
+  if (!length(k)) return(NA_integer_)
+  as.integer(query_to_raw(as.integer(aln$map[k[1L], "query"]), aln, hq_start, hq_len))
 }
 
-aligned_raw_indices <- function(aln, hq_start, hq_len, cut_after, flank=45L) {
-  if (!nrow(aln$map)) return(integer())
+map_cut_boundary <- function(cut_after, aln, hq_start, hq_len) {
+  left <- map_ref_to_raw(cut_after, aln, hq_start, hq_len)
+  right <- map_ref_to_raw(cut_after + 1L, aln, hq_start, hq_len)
+  valid <- is.finite(left) && is.finite(right) && abs(left - right) == 1L
+  list(valid=valid, ref_left=cut_after, ref_right=cut_after + 1L,
+       raw_pre=if (valid) min(left, right) else NA_integer_,
+       raw_post=if (valid) max(left, right) else NA_integer_,
+       raw_left=left, raw_right=right,
+       reason=if (valid) "Adjacent cut-flanking reference bases mapped" else
+         "Both immediately cut-flanking reference bases are not mapped adjacently")
+}
+
+aligned_raw_indices <- function(aln, hq_start, hq_len, cut_after, flank=50L) {
+  if (is.null(aln) || !nrow(aln$map)) return(integer())
   mm <- aln$map
-  ok <- is.finite(mm[,"ref"]) & is.finite(mm[,"query"]) &
-        abs(mm[,"ref"]-cut_after) <= flank
-  if (!any(ok)) return(integer())
-  qi <- as.integer(mm[ok,"query"])
-  as.integer(if (aln$strand=="+") hq_start+qi-1L else hq_start+(hq_len-qi))
+  valid <- is.finite(mm[, "ref"]) & is.finite(mm[, "query"]) &
+    abs(mm[, "ref"] - cut_after) <= flank
+  if (!any(valid)) return(integer())
+  as.integer(query_to_raw(as.integer(mm[valid, "query"]), aln, hq_start, hq_len))
+}
+
+# A homozygous/clean indel can remove the reference base that would ordinarily
+# anchor the cut boundary. Detect whether high-quality mapped bases bracket the
+# expected cut within a limited reference window; this is ONLY for a candidate
+# CLEAN gap, not for mixed-peak classification or WT-like evidence.
+map_cut_gap_bracket <- function(cut_after, aln, hq_start, hq_len, flank=12L) {
+  invalid <- list(valid=FALSE, raw_pre=NA_integer_, raw_post=NA_integer_,
+                  left_ref=NA_integer_, right_ref=NA_integer_, reason="No bracketing gap anchors")
+  if (is.null(aln) || !nrow(aln$map)) return(invalid)
+  mm <- aln$map
+  paired <- is.finite(mm[, "ref"]) & is.finite(mm[, "query"])
+  if (!any(paired)) return(invalid)
+  r <- as.integer(mm[paired, "ref"]); q <- as.integer(mm[paired, "query"])
+  l <- which(r <= cut_after & r >= cut_after - flank)
+  h <- which(r >= cut_after + 1L & r <= cut_after + 1L + flank)
+  if (!length(l) || !length(h)) return(invalid)
+  li <- l[which.max(r[l])]; hi <- h[which.min(r[h])]
+  rl <- query_to_raw(q[li], aln, hq_start, hq_len)
+  rh <- query_to_raw(q[hi], aln, hq_start, hq_len)
+  valid <- is.finite(rl) && is.finite(rh) && rl != rh
+  if (!valid) return(invalid)
+  list(valid=TRUE, raw_pre=as.integer(min(rl,rh)), raw_post=as.integer(max(rl,rh)),
+       left_ref=r[li], right_ref=r[hi], reason="Gap-region anchors bracket expected cut")
 }

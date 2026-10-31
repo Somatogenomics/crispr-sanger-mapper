@@ -1,31 +1,53 @@
-# Development notes
+# Development and validation notes (v0.2.1)
 
-The browser implementation was ported from a production Python Sanger/CRISPR QC workflow. Key invariants retained in the port:
+## Scope
 
-1. PAM validation is mandatory and strand-aware; finding a protospacer sequence alone is insufficient.
-2. A reverse-complemented guide is accepted only when the upstream reference PAM reverse-complements to the requested guide-strand PAM motif.
-3. Read orientation is selected by alignment rather than filename/primer assumptions.
-4. Both reference bases flanking the expected cleavage boundary are mapped through the gapped alignment into adjacent raw chromatogram basecalls.
-5. Mixed-peak evidence is quantified from the four raw/analyzed channel intensities at called-base peak locations; the call requires a cut-relative onset, a sustained after-cut signal, and a pre-cut contrast.
-6. Low-quality/low-alignment reads remain inconclusive even when a visual pattern is interesting; manual-review flags are separate from genotype calls.
-7. Exact allele size is not inferred from a phase-shifted mixed Sanger trace.
+Main branch: v0.2.0 affine-gap aligner / ABIF parser / CLI / GitHub workflow.
+Merged: v0.1.1's stricter PAM-cut baseline/onset/sustained signal rule,
+cut-flanking base mapping, mean Phred gate and evidence reporting.
 
-## Known MVP limitations
+## Evidence windows in raw sequencing direction
 
-- The in-browser aligner currently uses seed-localized Smith-Waterman with a linear gap penalty rather than the affine-gap Biopython `PairwiseAligner` used by the Python reference implementation.
-- The ABIF reader targets standard sequencing tags (`PBAS`, `PCON`, `PLOC`, `FWO_`, `DATA9–12`) and should be expanded/tested against more ABI instrument generations.
-- The classifier is intentionally conservative and should be benchmarked on validated WT, clean-indel, heterozygous, and mosaic datasets before publication-grade use.
+| Window | Offsets from last pre-cut base |
+|---|---|
+| Baseline | -35 through -9 |
+| Onset | -5 through +8 |
+| Sustained after cut | +3 through +28 |
 
-## v0.1.1 cut-site classifier audit
+Defaults: min 5 scored baseline bases; min 10 scored downstream bases;
+min 4 downstream mixed peaks; min 25% downstream mixed; 2+ in near-cut onset;
+post median >= 0.30; post-minus-pre median >= 0.15; pre median <= 0.25;
+post >= 1.8x pre. Only mapped bases with primary height >=50 and Phred >=10
+are eligible. Ratios are the secondary-to-primary channel peak heights.
 
-A generic post-cut window can spuriously count mixed peaks far from the Cas9 cut.
-The new pure-R `cut_localized_mixed_evidence()` only examines aligned bases around
-an sgRNA/PAM-validated cleavage boundary. It scores onset (-5..+8), nearby baseline
-(-35..-9) and sustained post-cut (+3..+28) in **raw read direction**, and requires
-sample-level and local QC. An unbracketed/gapped cut is explicitly inconclusive.
+These are **starting assumptions**, not validated sensitivity/specificity targets.
+Missing mapped cut coverage, baseline, onset, or post coverage produces an
+inconclusive `FAIL`, not a WT-like or a mutant call. Extrapolations are visual
+only; clean cut-spanning gaps have a separate bracketing rule.
 
-The thresholds are starting points, not calibrated specificity/sensitivity estimates.
-Negative controls, orthogonal edited samples, and alignment-indel simulation remain
-necessary before a publication-ready accuracy claim. A read that fails a
-minimum high-quality window or the original Python QC gate must not be
-promoted to a positive automatic call by relaxing quality criteria.
+## Benchmark before publication
+
+1. Confirm R syntax and run `Rscript tests/test_core.R` (CI does this).
+2. Run a browser smoke test on the exported Shinylive site with synthetic AB1.
+3. Compare v0.2.1 output against manually interpreted chromatograms with
+   orthogonally verified WT, heterozygous/mosaic indels, homozygous indels,
+   SNPs, contamination and failed reads; split by locus and instrument run.
+4. Compare against the pinned Python `sanger_crispr_qc.py` implementation;
+   record differences in alignment, cut mapping and mixed-peak metrics.
+5. Calibrate thresholds on a development set, report sensitivity, specificity,
+   ROC/PR with uncertainty, and freeze evaluation on an independent test set.
+6. Perform parameter sweeps; register false-positive/false-negative reviews and
+   manual reviewer agreement; protect unpublished experimental data.
+
+## R Shiny / native limitations
+
+R's webR browser package availability and performance must be tested after
+GitHub Pages deployment. Only base R + `shiny` are required at runtime.
+Real ABI traces from multiple basecaller generations and indel mixture levels
+are necessary for external validation.
+
+## CLI
+
+`tools/run_batch.R --param min_mean_q=15 --param het_threshold=0.3` writes
+summary.tsv, mismatches.tsv, errors.tsv and processing parameters to the
+output directory. Runs are separate from public test data.

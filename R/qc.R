@@ -36,7 +36,8 @@ pick_hq_window <- function(rec, mott_cutoff=0.05, min_q=20, min_len=20, allow_lo
   if ((w[2]-w[1]+1L) < min_len && allow_low && nchar(rec$seq)) {
     w <- c(1L, nchar(rec$seq)); method <- "full low-quality fallback"
   }
-  list(start=w[1], end=w[2], method=method, len=max(0L,w[2]-w[1]+1L))
+  list(start=w[1], end=w[2], method=method, len=max(0L,w[2]-w[1]+1L),
+       fallback=identical(method, "full low-quality fallback"))
 }
 
 trace_metrics <- function(rec) {
@@ -68,6 +69,7 @@ trace_metrics <- function(rec) {
   }
   out
 }
+
 
 # Evaluate a PHASE CHANGE localized to a PAM-validated Cas9 cut boundary.
 # Offsets are measured in actual chromatogram/sequencing direction; 0 is the
