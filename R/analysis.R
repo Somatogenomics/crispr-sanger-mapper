@@ -189,7 +189,7 @@ analyze_sample_guide <- function(rec, ref_name, ref, guide, pam="NGG",
 # Preserve v0.2.0 batch behavior (upload names, duplicate protection, error logging).
 analyse_batch <- function(files, ref_name, ref, guides, pam="NGG", sample_names=NULL, ...) {
   if (is.null(sample_names)) sample_names <- basename(files)
-  sample_names <- sub("\.[Aa][Bb]1$", "", sample_names)
+  sample_names <- sub("[.][Aa][Bb]1$", "", sample_names)
   if (anyDuplicated(sample_names)) sample_names <- make.unique(sample_names, sep="_dup")
   out <- list(); rows <- list(); errors <- list(); idx <- 1L
   for (fi in seq_along(files)) {
