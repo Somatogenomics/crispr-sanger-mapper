@@ -1,3 +1,14 @@
+## v0.2.2 — downloadable evidence figures and reports (2026-10-31)
+
+- Added three on-screen and downloadable per-sample figures: four-channel AB1 chromatogram with sgRNA/PAM/cut markers; secondary/primary peak ratio with pre-cut/onset/post-cut windows; Phred and reference-mapping coverage.
+- Added a four-page base-graphics PDF sample report, per-base TSV with raw trace peak metrics/reference mapping, single-sample evidence CSV, batch QC PNG, and complete batch CSV/TSV.
+- Added a settings CSV manifest; figure thresholds remain frozen to the values used during the Analyze action, so changing input controls cannot silently redraw an old call with new thresholds.
+- Applied Posit Community's documented Chrome/Edge Shinylive downloadButton workaround; use ordinary Shiny downloadHandler with browser-local output.
+- Every figure reports the QC PASS/FAIL flag; mixed peaks in QC-failed traces are review evidence, never confirmed edits.
+- Added synthetic-only report export regression checks; no experimental chromatograms or guide sites are bundled.
+
+**Validation:** source/static checks only in the assembly environment (no R installed). Core R and deployment browser tests remain necessary; no scientific performance benchmark is claimed.
+
 # Release notes
 
 ## v0.2.1 — PAM-anchored phase change (2026-10-31)

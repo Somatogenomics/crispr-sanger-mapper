@@ -1,10 +1,10 @@
-# CRISPR Sanger Mapper (v0.2.1)
+# CRISPR Sanger Mapper (v0.2.2)
 
 A browser-local [Shiny/Shinylive](https://posit-dev.github.io/r-shinylive/) prototype
 for checking AB1 chromatograms against a user-supplied FASTA, sgRNA(s), and the
 strand-correct PAM. **Screening hypotheses, not definitive edit/genotype calls.**
 
-## What is in v0.2.1?
+## What is in v0.2.2?
 
 - Dependency-free native R ABIF parser: PBAS, PCON, PLOC, FWO_, DATA9–12.
 - Mott high-quality trimming and mean-Phred gating; low-quality fallback never
@@ -17,10 +17,29 @@ strand-correct PAM. **Screening hypotheses, not definitive edit/genotype calls.*
   **post-cut +3..+28** evidence, all in original sequencing direction.
 - An extrapolated/one-sided cut is a *visual review marker only*; never an
   automated mixed indel or WT-like call.
-- Chromatogram with guide/PAM/cut markers, secondary/primary peak ratios,
-  aligned mismatches, annotated gaps and batch CSV download.
+- Interactive sample review with three **downloadable figures**: chromatogram showing
+  guide/PAM and cleavage boundary; cut-relative secondary/primary peak ratio and
+  onset/post-cut windows; base Phred and mapped coverage. Figures always show QC status.
+- Batch summary CSV/TSV, settings CSV, per-sample evidence CSV, per-base TSV and
+  four-page **PDF sample report**, all generated locally in webR. Chrome/Edge
+  download compatibility workaround included.
+- Figures use a frozen snapshot of thresholds from the last Analyze action,
+  not potentially changed controls that were not used for classification.
 - Command-line runner (`tools/run_batch.R`) outputs TSV and run parameters.
 - Synthetic (nonexperimental) AB1 fixtures and tests; GitHub Actions workflow.
+
+## Download results in the browser
+
+After selecting a FASTA, uploading AB1 chromatograms and entering a guide,
+click **Analyze**. Under **Batch summary**, download all calls (CSV/TSV), parser
+errors (CSV), the settings manifest (CSV), or the batch QC figure (PNG). Under
+**Sample review**, select an AB1 × sgRNA, inspect three evidence figures and
+export individual PNGs, the summary CSV, per-base TSV, or a four-page PDF.
+
+Chrome/Edge Shinylive builds apply the documented `downloadButton()` workaround
+that removes the HTML `download` attribute from the element. Actual browser
+compatibility must be confirmed after deploying. No datasets are sent to a
+backend when running via Shinylive.
 
 ## Calls and their meaning
 

@@ -1,4 +1,4 @@
-# Development and validation notes (v0.2.1)
+# Development and validation notes (v0.2.2)
 
 ## Scope
 
@@ -29,7 +29,7 @@ only; clean cut-spanning gaps have a separate bracketing rule.
 
 1. Confirm R syntax and run `Rscript tests/test_core.R` (CI does this).
 2. Run a browser smoke test on the exported Shinylive site with synthetic AB1.
-3. Compare v0.2.1 output against manually interpreted chromatograms with
+3. Compare v0.2.2 output against manually interpreted chromatograms with
    orthogonally verified WT, heterozygous/mosaic indels, homozygous indels,
    SNPs, contamination and failed reads; split by locus and instrument run.
 4. Compare against the pinned Python `sanger_crispr_qc.py` implementation;
@@ -51,3 +51,10 @@ are necessary for external validation.
 `tools/run_batch.R --param min_mean_q=15 --param het_threshold=0.3` writes
 summary.tsv, mismatches.tsv, errors.tsv and processing parameters to the
 output directory. Runs are separate from public test data.
+
+## v0.2.2 reporting verification
+
+Run `Rscript tests/test_core.R` (including synthetic PDF/PNG/CSV/TSV export
+checks), then confirm actual Chrome/Edge and Firefox downloads on the deployed
+Shinylive site. Full batch/plot correctness requires a matched WT, known-edited
+and no-edit real-chromatogram benchmark. Do not commit experimental AB1 files.

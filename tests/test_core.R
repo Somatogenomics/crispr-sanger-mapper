@@ -247,6 +247,39 @@ b2 <- analyse_batch(file.path(td,c("wt_F.ab1","wt_R.ab1")), "synthetic",sref,sg,
                     sample_names=c("synthetic_sample.ab1","synthetic_sample.ab1"))
 check("batch keeps distinct sample identifiers", identical(b2$summary$sample,c("synthetic_sample","synthetic_sample_dup1")))
 
+# ---- v0.2.2 reporting / figures / download artifacts ----------------------
+source("R/plots.R")
+source("R/reporting.R")
+report_ans <- analyze_sample_guide(read_ab1(file.path(td,"wt_F.ab1")),
+                                   "synthetic",sref,sg)
+check("per-base export retains raw AB1 orientation",
+      nrow(per_base_export(report_ans)) == nchar(report_ans$rec$seq))
+check("per-base export includes mapped reference positions",
+      any(is.finite(per_base_export(report_ans)$reference_position)))
+check("per-base export includes peak heights and scoring QC",
+      all(c("A","C","G","T","second_to_primary","eligible_for_peak_scoring",
+            "in_hq_window") %in% names(per_base_export(report_ans))))
+report_dir <- tempfile("report_tests_"); dir.create(report_dir)
+sfile <- file.path(report_dir,"sample.csv")
+pfile <- file.path(report_dir,"perbase.tsv")
+paramfile <- file.path(report_dir,"settings.csv")
+pdf_file <- file.path(report_dir,"sample.pdf")
+write_sample_evidence(report_ans,sfile)
+write_sample_per_base(report_ans,pfile)
+settings <- list(mott_cutoff=0.05,secondary_primary_threshold=0.30,
+                 min_mean_hq_phred=20)
+write_settings_csv(settings,paramfile)
+check("sample evidence CSV written",file.exists(sfile) && file.info(sfile)$size > 50)
+check("per-base TSV readable",nrow(utils::read.delim(pfile,check.names=FALSE)) == nchar(report_ans$rec$seq))
+check("settings CSV roundtrips",all(names(settings) %in% utils::read.csv(paramfile)$parameter))
+write_sample_report_pdf(report_ans,pdf_file,settings=settings)
+check("multi-page PDF saved",file.exists(pdf_file) && file.info(pdf_file)$size > 2000)
+if (capabilities("png")) {
+  png_file <- file.path(report_dir,"chromatogram.png")
+  save_figure_png(png_file, function() plot_trace(report_ans), width=1200L,height=700L,res=100L)
+  check("chromatogram PNG saved",file.exists(png_file) && file.info(png_file)$size > 3000)
+}
+
 if(nzchar(Sys.getenv("CSM_VERBOSE")))
   print(do.call(rbind,res)[,c("call","strand","hq_len","cut_mapping",
                               "onset_mixed_n","post_double_fraction","gap_detail")])

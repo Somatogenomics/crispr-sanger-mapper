@@ -1,5 +1,5 @@
-Application: CRISPR Sanger Mapper v0.2.1
-Development baseline: R 4.3.3; shiny 1.8.0 (from v0.2.0; v0.2.1 NOT independently executed)
+Application: CRISPR Sanger Mapper v0.2.2
+Development baseline: R 4.3.3; shiny 1.8.0 (from v0.2.0; v0.2.2 NOT independently executed)
 Runtime target: Shiny via webR/Shinylive
 R dependency policy: base R + shiny (full renv.lock pending R-enabled environment)
 GitHub test matrix: setup-r R 4.3.3

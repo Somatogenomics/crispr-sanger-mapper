@@ -12,3 +12,8 @@ h2 { color:#17365d; font-weight:700; margin-bottom:2px; }
 .privacy { font-size:12px; color:#355d4d; }
 .note { font-size:12px; color:#666; }
 .alignment { font-family:Consolas,Monaco,monospace; font-size:12px; background:#101820; color:#edf3f7; padding:12px; max-height:320px; overflow:auto; }
+
+.download-actions { display:flex; flex-wrap:wrap; gap:8px; margin:8px 0 16px; }
+.download-actions .btn, .download-actions a { margin:0; }
+.tab-content h4 { margin-top:22px; color:#17365d; }
+#summary_short table td { max-width:320px; word-break:break-word; }
