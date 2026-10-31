@@ -116,7 +116,7 @@ The synthetic reference is not a biological locus.
 - Sensitivity to post-cut mixture is reduced when the quality-trimmed alignment
   fails to cover the cut or downstream trace; this yields `FAIL`/manual review.
 - Thresholds and false-positive/negative rates remain uncalibrated.
-- The Python reference pipeline is a comparison target; parity is not established.
-- Shinylive/webR deployment must be validated on the deployed GitHub Pages app.
+
+
 
 MIT License. See `SANGER_REVIEW_STANDARD.md` and `DEVELOPMENT.md`.
