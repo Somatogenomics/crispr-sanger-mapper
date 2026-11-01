@@ -48,6 +48,5 @@ See `SANGER_REVIEW_STANDARD.md` for exact decision definitions and
 ## v0.2.2 browser reporting
 
 Static checks completed in the build environment; R/webR unavailable for direct
-execution. Exports and actual downloads MUST be exercised by GitHub Actions
-and a live Shinylive browser session. A figure showing mixed signal does not
+execution. A figure showing mixed signal does not
 upgrade a QC failure to edited genotype.
