@@ -103,11 +103,7 @@ After pushing to `main`, enable **Settings → Pages → Source: GitHub Actions*
 The app executes under webR in the user's browser; data are processed locally
 when used through Shinylive (not when running Shiny in hosted server mode).
 
-## Research-disclosure guard
 
-Only synthetic data/examples are distributed. **Do not commit live experimental
-AB1, sgRNA, unpublished phenotype/genotype, or sample metadata** to a public repo.
-The synthetic reference is not a biological locus.
 
 ## Limitations
 
